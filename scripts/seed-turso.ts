@@ -2,16 +2,18 @@ import { createClient } from '@libsql/client';
 import fs from 'fs';
 import path from 'path';
 
-// Read .env.local manually if not in process.env
-const envPath = path.resolve(process.cwd(), '.env.local');
-if (fs.existsSync(envPath)) {
-  const envContent = fs.readFileSync(envPath, 'utf-8');
-  for (const line of envContent.split('\n')) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith('#')) continue;
-    const [key, ...values] = trimmed.split('=');
-    if (key && values.length > 0) {
-      process.env[key.trim()] = values.join('=').trim();
+// Read .env and .env.local manually if not in process.env
+for (const filename of ['.env', '.env.local']) {
+  const envPath = path.resolve(process.cwd(), filename);
+  if (fs.existsSync(envPath)) {
+    const envContent = fs.readFileSync(envPath, 'utf-8');
+    for (const line of envContent.split('\n')) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith('#')) continue;
+      const [key, ...values] = trimmed.split('=');
+      if (key && values.length > 0) {
+        process.env[key.trim()] = values.join('=').trim();
+      }
     }
   }
 }
@@ -99,3 +101,4 @@ main().catch(err => {
   console.error('Error during Turso seed:', err);
   process.exit(1);
 });
+
