@@ -4,18 +4,15 @@ import { getTursoClient, initDatabase, rowToFinding } from '../_db';
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, PUT, DELETE, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
   }
 
   const db = getTursoClient();
-  if (!db) {
-    return res.status(500).json({ error: 'Database tidak tersedia.' });
-  }
 
-  const { id } = req.query as { id: string };
+  const id = (req.query?.id as string) || (req.body?.id as string);
   if (!id) {
     return res.status(400).json({ error: 'ID diperlukan' });
   }
@@ -35,7 +32,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     if (req.method === 'PUT') {
-      const item = req.body;
+      const item = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
       if (!item) {
         return res.status(400).json({ error: 'Body kosong' });
       }
@@ -80,14 +77,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     if (req.method === 'DELETE') {
-      const existing = await db.execute({
-        sql: 'SELECT id FROM findings WHERE id = ? OR CAST(no AS TEXT) = ?',
-        args: [id, id],
-      });
-      if (existing.rows.length === 0) {
-        return res.status(404).json({ error: 'Temuan tidak ditemukan' });
-      }
-
       await db.execute({
         sql: 'DELETE FROM findings WHERE id = ? OR CAST(no AS TEXT) = ?',
         args: [id, id],
@@ -102,4 +91,3 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(500).json({ error: err.message || 'Internal server error' });
   }
 }
-

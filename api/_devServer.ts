@@ -17,6 +17,7 @@ export function tursoApiDevPlugin(): Plugin {
 
         const url = new URL(req.url, 'http://localhost');
         const pathname = url.pathname;
+        const queryId = url.searchParams.get('id');
 
         const sendJson = (status: number, data: any) => {
           res.setHeader('Content-Type', 'application/json');
@@ -40,9 +41,6 @@ export function tursoApiDevPlugin(): Plugin {
           });
 
         const db = getTursoClient();
-        if (!db) {
-          return sendJson(500, { error: 'Turso client tidak tersedia. Periksa .env.local' });
-        }
 
         try {
           await initDatabase(db);
@@ -60,15 +58,33 @@ export function tursoApiDevPlugin(): Plugin {
             return sendJson(200, { success: true, count: Number(countRes.rows[0].count) });
           }
 
-          // Route: /api/findings
-          if (pathname === '/api/findings') {
+          // Route: /api/findings (with optional query ?id=...) OR /api/findings/:id
+          const idMatch = pathname.match(/^\/api\/findings\/([^/]+)$/);
+          const targetId = idMatch ? decodeURIComponent(idMatch[1]) : queryId;
+
+          if (pathname === '/api/findings' || idMatch) {
+            // GET
             if (req.method === 'GET') {
+              if (targetId) {
+                const getRes = await db.execute({
+                  sql: 'SELECT * FROM findings WHERE id = ? OR CAST(no AS TEXT) = ?',
+                  args: [targetId, targetId],
+                });
+                if (getRes.rows.length === 0) return sendJson(404, { error: 'Not found' });
+                return sendJson(200, { success: true, data: rowToFinding(getRes.rows[0]) });
+              }
               const result = await db.execute('SELECT * FROM findings ORDER BY no ASC');
               return sendJson(200, { success: true, data: result.rows.map(rowToFinding) });
             }
-            if (req.method === 'POST') {
+
+            // POST (Add Finding)
+            if (req.method === 'POST' && pathname === '/api/findings') {
               const item = await parseBody();
-              const id = item.id || `K3-${item.no}-${Date.now()}`;
+              const maxRes = await db.execute('SELECT MAX(no) as max_no FROM findings');
+              const maxNo = Number(maxRes.rows[0]?.max_no || 0);
+              const safeNo = item.no && item.no > maxNo ? item.no : maxNo + 1;
+              const id = item.id || `K3-${safeNo}-${Date.now()}`;
+
               await db.execute({
                 sql: `INSERT INTO findings (
                   id, no, tanggal, tanggal_iso, lokasi, aktivitas, potensi_bahaya,
@@ -77,7 +93,7 @@ export function tursoApiDevPlugin(): Plugin {
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
                 args: [
                   id,
-                  item.no,
+                  safeNo,
                   item.tanggal,
                   item.tanggalIso || item.tanggal,
                   item.lokasi,
@@ -91,31 +107,22 @@ export function tursoApiDevPlugin(): Plugin {
                   item.raw?.kategori || null,
                   item.raw?.pengendalian || null,
                   item.raw?.potensiBahaya || null,
-                  item.raw?.tanggal || null
-                ]
+                  item.raw?.tanggal || null,
+                ],
               });
               const inserted = await db.execute({
                 sql: 'SELECT * FROM findings WHERE id = ?',
-                args: [id]
+                args: [id],
               });
               return sendJson(201, { success: true, data: rowToFinding(inserted.rows[0]) });
             }
-          }
 
-          // Route: /api/findings/:id
-          const idMatch = pathname.match(/^\/api\/findings\/([^/]+)$/);
-          if (idMatch) {
-            const id = decodeURIComponent(idMatch[1]);
-            if (req.method === 'GET') {
-              const getRes = await db.execute({
-                sql: 'SELECT * FROM findings WHERE id = ? OR CAST(no AS TEXT) = ?',
-                args: [id, id]
-              });
-              if (getRes.rows.length === 0) return sendJson(404, { error: 'Not found' });
-              return sendJson(200, { success: true, data: rowToFinding(getRes.rows[0]) });
-            }
+            // PUT (Update Finding)
             if (req.method === 'PUT') {
               const item = await parseBody();
+              const idToUpdate = targetId || item?.id;
+              if (!idToUpdate) return sendJson(400, { error: 'ID diperlukan' });
+
               await db.execute({
                 sql: `UPDATE findings SET
                   tanggal = ?, tanggal_iso = ?, lokasi = ?, aktivitas = ?,
@@ -139,20 +146,26 @@ export function tursoApiDevPlugin(): Plugin {
                   item.raw?.pengendalian || null,
                   item.raw?.potensiBahaya || null,
                   item.raw?.tanggal || null,
-                  id,
-                  id
-                ]
+                  idToUpdate,
+                  idToUpdate,
+                ],
               });
               const updated = await db.execute({
                 sql: 'SELECT * FROM findings WHERE id = ? OR CAST(no AS TEXT) = ?',
-                args: [id, id]
+                args: [idToUpdate, idToUpdate],
               });
               return sendJson(200, { success: true, data: rowToFinding(updated.rows[0]) });
             }
+
+            // DELETE
             if (req.method === 'DELETE') {
+              const item = await parseBody();
+              const idToDelete = targetId || item?.id;
+              if (!idToDelete) return sendJson(400, { error: 'ID diperlukan' });
+
               await db.execute({
                 sql: 'DELETE FROM findings WHERE id = ? OR CAST(no AS TEXT) = ?',
-                args: [id, id]
+                args: [idToDelete, idToDelete],
               });
               return sendJson(200, { success: true, message: 'Deleted' });
             }

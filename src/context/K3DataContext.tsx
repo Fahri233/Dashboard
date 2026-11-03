@@ -6,6 +6,7 @@ import React, {
   useMemo,
   useCallback,
 } from 'react';
+import seedData from '../data/seed.json';
 import { K3Finding } from '../types/k3';
 import { useFilter } from './FilterContext';
 import { filterFindings } from '../lib/k3-calculations';
@@ -38,7 +39,15 @@ async function apiFetch<T>(url: string, options?: RequestInit): Promise<T> {
     headers: { 'Content-Type': 'application/json' },
     ...options,
   });
-  const json = await res.json();
+
+  const text = await res.text();
+  let json: any;
+  try {
+    json = text ? JSON.parse(text) : {};
+  } catch {
+    throw new Error(`Respon server bukan JSON: ${text.slice(0, 120)} (HTTP ${res.status})`);
+  }
+
   if (!res.ok || json.error) {
     throw new Error(json.error || `HTTP ${res.status}`);
   }
@@ -50,7 +59,8 @@ async function apiFetch<T>(url: string, options?: RequestInit): Promise<T> {
 export const K3DataProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { filter } = useFilter();
 
-  const [findings, setFindings] = useState<K3Finding[]>([]);
+  // Inisialisasi awal selalu dengan seedData agar UI tidak kosong saat memuat atau bila offline
+  const [findings, setFindings] = useState<K3Finding[]>(() => seedData as K3Finding[]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -62,10 +72,12 @@ export const K3DataProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       const json = await apiFetch<{ success: boolean; data: K3Finding[] }>(
         `${API_BASE}/findings`
       );
-      setFindings(json.data);
+      if (Array.isArray(json.data) && json.data.length > 0) {
+        setFindings(json.data);
+      }
     } catch (err: any) {
-      console.error('Gagal memuat data dari Turso:', err);
-      setError(err.message || 'Gagal memuat data');
+      console.warn('Gagal memuat data dari Turso API, menggunakan data lokal/seed:', err);
+      setError(err.message || 'Gagal memuat data dari database');
     } finally {
       setIsLoading(false);
     }
@@ -85,35 +97,58 @@ export const K3DataProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const addFinding = useCallback(
     async (item: Omit<K3Finding, 'id' | 'no'>): Promise<K3Finding> => {
       const maxNo = findings.reduce((max, f) => (f.no > max ? f.no : max), 0);
-      const newNo = maxNo + 1;
-      const newFinding: Omit<K3Finding, 'id'> & { id: string } = {
+      const newNo = (item as any).no && (item as any).no > maxNo ? (item as any).no : maxNo + 1;
+      const newFinding: K3Finding = {
         ...item,
         id: `K3-${newNo}-${Date.now()}`,
         no: newNo,
       };
 
-      const json = await apiFetch<{ success: boolean; data: K3Finding }>(
-        `${API_BASE}/findings`,
-        { method: 'POST', body: JSON.stringify(newFinding) }
-      );
-
-      setFindings(prev => [...prev, json.data]);
-      return json.data;
+      try {
+        const json = await apiFetch<{ success: boolean; data: K3Finding }>(
+          `${API_BASE}/findings`,
+          { method: 'POST', body: JSON.stringify(newFinding) }
+        );
+        const saved = json.data || newFinding;
+        setFindings(prev => [...prev.filter(f => f.id !== saved.id), saved]);
+        return saved;
+      } catch (err: any) {
+        console.error('API POST /api/findings gagal:', err);
+        // Fallback optimistic update agar aplikasi tetap berjalan
+        setFindings(prev => [...prev, newFinding]);
+        alert(`Perhatian: Data tersimpan secara lokal, namun gagal sinkron ke Turso: ${err.message}`);
+        return newFinding;
+      }
     },
     [findings]
   );
 
   const updateFinding = useCallback(async (updated: K3Finding): Promise<void> => {
-    const json = await apiFetch<{ success: boolean; data: K3Finding }>(
-      `${API_BASE}/findings/${updated.id}`,
-      { method: 'PUT', body: JSON.stringify(updated) }
-    );
-    setFindings(prev => prev.map(f => (f.id === updated.id ? json.data : f)));
+    try {
+      const json = await apiFetch<{ success: boolean; data: K3Finding }>(
+        `${API_BASE}/findings?id=${encodeURIComponent(updated.id)}`,
+        { method: 'PUT', body: JSON.stringify(updated) }
+      );
+      const saved = json.data || updated;
+      setFindings(prev => prev.map(f => (f.id === updated.id || f.no === updated.no ? saved : f)));
+    } catch (err: any) {
+      console.error(`API PUT /api/findings?id=${updated.id} gagal:`, err);
+      // Fallback optimistic update
+      setFindings(prev => prev.map(f => (f.id === updated.id || f.no === updated.no ? updated : f)));
+      alert(`Perhatian: Data diperbarui secara lokal, namun gagal sinkron ke Turso: ${err.message}`);
+    }
   }, []);
 
   const deleteFinding = useCallback(async (id: string): Promise<void> => {
-    await apiFetch(`${API_BASE}/findings/${id}`, { method: 'DELETE' });
-    setFindings(prev => prev.filter(f => f.id !== id && String(f.no) !== id));
+    try {
+      await apiFetch(`${API_BASE}/findings?id=${encodeURIComponent(id)}`, { method: 'DELETE' });
+      setFindings(prev => prev.filter(f => f.id !== id && String(f.no) !== id));
+    } catch (err: any) {
+      console.error(`API DELETE /api/findings?id=${id} gagal:`, err);
+      // Fallback optimistic update
+      setFindings(prev => prev.filter(f => f.id !== id && String(f.no) !== id));
+      alert(`Perhatian: Data dihapus secara lokal, namun gagal sinkron ke Turso: ${err.message}`);
+    }
   }, []);
 
   const resetToSeed = useCallback(async (): Promise<void> => {
@@ -123,7 +158,8 @@ export const K3DataProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       await apiFetch(`${API_BASE}/findings/reset`, { method: 'POST' });
       await refetch();
     } catch (err: any) {
-      setError(err.message);
+      console.warn('Gagal reset via API, menggunakan seed lokal:', err);
+      setFindings(seedData as K3Finding[]);
       setIsLoading(false);
     }
   }, [refetch]);
@@ -133,13 +169,17 @@ export const K3DataProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       let toInsert: K3Finding[];
 
       if (mode === 'replace') {
-        // Reset first, then insert all
-        await apiFetch(`${API_BASE}/findings/reset`, { method: 'POST' });
+        try {
+          await apiFetch(`${API_BASE}/findings/reset`, { method: 'POST' });
+        } catch {
+          // Continue with fallback
+        }
         toInsert = imported.map((item, i) => ({
           ...item,
           id: `K3-${i + 1}-${Date.now()}`,
           no: i + 1,
         }));
+        setFindings(toInsert);
       } else {
         let currentMaxNo = findings.reduce((max, f) => (f.no > max ? f.no : max), 0);
         toInsert = imported.map(item => {
@@ -150,19 +190,22 @@ export const K3DataProvider: React.FC<{ children: React.ReactNode }> = ({ childr
             no: currentMaxNo,
           };
         });
+        setFindings(prev => [...prev, ...toInsert]);
       }
 
-      // Insert each one (batch via sequential POSTs)
+      // Sync ke Turso di background
       for (const item of toInsert) {
-        await apiFetch(`${API_BASE}/findings`, {
-          method: 'POST',
-          body: JSON.stringify(item),
-        });
+        try {
+          await apiFetch(`${API_BASE}/findings`, {
+            method: 'POST',
+            body: JSON.stringify(item),
+          });
+        } catch (err) {
+          console.error('Gagal sync row ke Turso:', err);
+        }
       }
-
-      await refetch();
     },
-    [findings, refetch]
+    [findings]
   );
 
   // ── Lookups ───────────────────────────────────────────────────────────────

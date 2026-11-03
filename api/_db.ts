@@ -4,18 +4,18 @@ import { K3Finding } from '../src/types/k3.ts';
 
 let client: Client | null = null;
 
-export function getTursoClient(): Client | null {
-  const url = process.env.TURSO_DATABASE_URL;
-  const authToken = process.env.TURSO_AUTH_TOKEN;
+const DEFAULT_URL = 'libsql://dashboard-fahri233.aws-ap-southeast-1.turso.io';
+const DEFAULT_AUTH_TOKEN =
+  'eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJhIjoicnciLCJpYXQiOjE3OTM3MTY3MTcsImlkIjoiMDFhMWExZDgtZTIwMS03NzE5LWJkMDUtOTIxNDVhMzczN2EwIiwia2lkIjoiUml3czV4QW40aWV5eWVlYWpwV19uSnJfbXBoRklyb3N5eWE2YmJnZERtMCIsInJpZCI6Ijc4ODI4YjQyLWIxNzAtNDI4YS1hMDQ4LTVhNzc3NWE3MDBmOSJ9.oGGutSDRGFKwD9l7G2V2e2uaRFkCtM1IOHq574vfGyIa8zoua9ucgFFcwEiECIc6EGcg0p893hqrTxbZwbo4Ag';
 
-  if (!url) {
-    return null;
-  }
+export function getTursoClient(): Client {
+  const url = process.env.TURSO_DATABASE_URL || DEFAULT_URL;
+  const authToken = process.env.TURSO_AUTH_TOKEN || DEFAULT_AUTH_TOKEN;
 
   if (!client) {
     client = createClient({
       url,
-      authToken: authToken || undefined
+      authToken: authToken || undefined,
     });
   }
 
@@ -40,8 +40,8 @@ export function rowToFinding(row: any): K3Finding {
       kategori: row.raw_kategori || undefined,
       pengendalian: row.raw_pengendalian || undefined,
       potensiBahaya: row.raw_potensi_bahaya || undefined,
-      tanggal: row.raw_tanggal || undefined
-    }
+      tanggal: row.raw_tanggal || undefined,
+    },
   };
 }
 
@@ -108,10 +108,9 @@ export async function seedFindings(db: Client) {
       item.raw?.kategori || null,
       item.raw?.pengendalian || null,
       item.raw?.potensiBahaya || null,
-      item.raw?.tanggal || null
-    ]
+      item.raw?.tanggal || null,
+    ],
   }));
 
   await db.batch(statements, 'write');
 }
-

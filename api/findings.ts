@@ -4,35 +4,49 @@ import { getTursoClient, initDatabase, rowToFinding } from './_db';
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   // CORS headers
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
   }
 
   const db = getTursoClient();
-  if (!db) {
-    return res.status(500).json({ error: 'Database tidak tersedia. Periksa environment variables.' });
-  }
 
   try {
     await initDatabase(db);
 
+    // ─── GET ─────────────────────────────────────────────────────────────
     if (req.method === 'GET') {
+      const id = req.query?.id as string | undefined;
+      if (id) {
+        const result = await db.execute({
+          sql: 'SELECT * FROM findings WHERE id = ? OR CAST(no AS TEXT) = ?',
+          args: [id, id],
+        });
+        if (result.rows.length === 0) {
+          return res.status(404).json({ error: 'Temuan tidak ditemukan' });
+        }
+        return res.status(200).json({ success: true, data: rowToFinding(result.rows[0]) });
+      }
+
       const result = await db.execute('SELECT * FROM findings ORDER BY no ASC');
       const findings = result.rows.map(rowToFinding);
       return res.status(200).json({ success: true, data: findings });
     }
 
+    // ─── POST (Tambah Temuan) ─────────────────────────────────────────────
     if (req.method === 'POST') {
-      const item = req.body;
+      const item = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
       if (!item) {
         return res.status(400).json({ error: 'Body kosong' });
       }
 
-      // Generate id if not provided
-      const id = item.id || `K3-${item.no}-${Date.now()}`;
+      // Hitung next no secara aman dari database untuk mencegah duplicate key
+      const maxRes = await db.execute('SELECT MAX(no) as max_no FROM findings');
+      const maxNo = Number(maxRes.rows[0]?.max_no || 0);
+      const safeNo = item.no && item.no > maxNo ? item.no : maxNo + 1;
+      const id = item.id || `K3-${safeNo}-${Date.now()}`;
 
       await db.execute({
         sql: `INSERT INTO findings (
@@ -42,7 +56,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         args: [
           id,
-          item.no,
+          safeNo,
           item.tanggal,
           item.tanggalIso || item.tanggal,
           item.lokasi,
@@ -68,10 +82,73 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(201).json({ success: true, data: rowToFinding(inserted.rows[0]) });
     }
 
+    // ─── PUT (Update Temuan) ──────────────────────────────────────────────
+    if (req.method === 'PUT') {
+      const item = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
+      const id = (req.query?.id as string) || item?.id;
+      if (!id) {
+        return res.status(400).json({ error: 'ID temuan diperlukan untuk update' });
+      }
+
+      await db.execute({
+        sql: `UPDATE findings SET
+          tanggal = ?, tanggal_iso = ?, lokasi = ?, aktivitas = ?,
+          potensi_bahaya = ?, kategori = ?, tingkat_risiko = ?,
+          pengendalian = ?, status = ?, keterangan = ?,
+          raw_kategori = ?, raw_pengendalian = ?, raw_potensi_bahaya = ?, raw_tanggal = ?,
+          updated_at = CURRENT_TIMESTAMP
+        WHERE id = ? OR CAST(no AS TEXT) = ?`,
+        args: [
+          item.tanggal,
+          item.tanggalIso || item.tanggal,
+          item.lokasi,
+          item.aktivitas,
+          item.potensiBahaya,
+          item.kategori,
+          item.tingkatRisiko,
+          item.pengendalian,
+          item.status,
+          item.keterangan || '-',
+          item.raw?.kategori || null,
+          item.raw?.pengendalian || null,
+          item.raw?.potensiBahaya || null,
+          item.raw?.tanggal || null,
+          id,
+          id,
+        ],
+      });
+
+      const updated = await db.execute({
+        sql: 'SELECT * FROM findings WHERE id = ? OR CAST(no AS TEXT) = ?',
+        args: [id, id],
+      });
+
+      if (updated.rows.length === 0) {
+        return res.status(404).json({ error: 'Temuan tidak ditemukan' });
+      }
+
+      return res.status(200).json({ success: true, data: rowToFinding(updated.rows[0]) });
+    }
+
+    // ─── DELETE (Hapus Temuan) ────────────────────────────────────────────
+    if (req.method === 'DELETE') {
+      const item = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : req.body;
+      const id = (req.query?.id as string) || item?.id;
+      if (!id) {
+        return res.status(400).json({ error: 'ID temuan diperlukan untuk delete' });
+      }
+
+      await db.execute({
+        sql: 'DELETE FROM findings WHERE id = ? OR CAST(no AS TEXT) = ?',
+        args: [id, id],
+      });
+
+      return res.status(200).json({ success: true, message: 'Temuan berhasil dihapus' });
+    }
+
     return res.status(405).json({ error: 'Method tidak diizinkan' });
   } catch (err: any) {
     console.error('API /api/findings error:', err);
     return res.status(500).json({ error: err.message || 'Internal server error' });
   }
 }
-
