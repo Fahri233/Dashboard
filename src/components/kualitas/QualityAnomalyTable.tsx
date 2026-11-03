@@ -202,9 +202,9 @@ export const QualityAnomalyTable: React.FC = () => {
         }}
         initialData={editingFinding}
         nextNo={findings.length + 1}
-        onSubmit={data => {
+        onSubmit={async data => {
           if (editingFinding) {
-            updateFinding({ ...data, id: editingFinding.id });
+            await updateFinding({ ...data, id: editingFinding.id });
           }
         }}
       />

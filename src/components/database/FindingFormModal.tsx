@@ -17,7 +17,7 @@ import { AlertTriangle } from 'lucide-react';
 interface FindingFormModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSubmit: (finding: Omit<K3Finding, 'id'>) => void;
+  onSubmit: (finding: Omit<K3Finding, 'id'>) => void | Promise<void>;
   initialData?: K3Finding | null;
   nextNo: number;
 }

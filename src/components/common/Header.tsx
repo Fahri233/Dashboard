@@ -15,9 +15,9 @@ export const Header: React.FC<HeaderProps> = ({ onToggleSidebar }) => {
     window.print();
   };
 
-  const handleResetData = () => {
+  const handleResetData = async () => {
     if (window.confirm('Kembalikan seluruh data ke versi awal Excel (seed)? Perubahan Anda akan direset.')) {
-      resetToSeed();
+      await resetToSeed();
     }
   };
 

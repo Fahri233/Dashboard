@@ -1,6 +1,6 @@
 # K3 Safety Monitoring (Occupational Safety Risk Dashboard)
 
-Aplikasi web modern berbasis React, TypeScript, dan Tailwind CSS untuk pemantauan, analisis risiko, serta manajemen database K3 (Keselamatan dan Kesehatan Kerja). Aplikasi ini merupakan hasil digitalisasi dan pembenahan dari file spreadsheet `DASHBOARD.xlsx`.
+Aplikasi web modern berbasis React, TypeScript, Tailwind CSS, dan Turso Database (libSQL) untuk pemantauan, analisis risiko, serta manajemen database K3 (Keselamatan dan Kesehatan Kerja). Aplikasi ini merupakan hasil digitalisasi dan pembenahan dari file spreadsheet `DASHBOARD.xlsx` dan siap di-deploy ke **Vercel**.
 
 ---
 
@@ -38,7 +38,7 @@ Aplikasi web modern berbasis React, TypeScript, dan Tailwind CSS untuk pemantaua
      - Import file `.xlsx` (dukungan mode replace atau append).
      - Export Excel (`.xlsx`) berformat rapi dengan header tebal dan lebar kolom disesuaikan.
      - Export CSV (ber-BOM UTF-8 agar kompatibel langsung dengan Microsoft Excel).
-     - Tombol *Reset ke Data Excel* untuk memulihkan data bawaan kapan saja.
+     - Tombol *Reset ke Data Excel* untuk memulihkan data bawaan ke database Turso kapan saja.
 
 4. **Kualitas Data & Audit Anomali (Halaman 4):**
    - Audit otomatis integritas data mentah (`raw`):
@@ -55,16 +55,16 @@ Aplikasi web modern berbasis React, TypeScript, dan Tailwind CSS untuk pemantaua
 
 ---
 
-## 🛠️ Tech Stack
+## 🛠️ Tech Stack & Arsitektur
 
-- **Framework:** [React 19](https://react.dev/) + [Vite](https://vitejs.dev/) + [TypeScript](https://www.typescriptlang.org/)
-- **Routing:** [React Router v7](https://reactrouter.com/)
+- **Frontend:** [React 19](https://react.dev/) + [Vite](https://vitejs.dev/) + [TypeScript](https://www.typescriptlang.org/)
 - **Styling:** [Tailwind CSS v3](https://tailwindcss.com/)
 - **Visualisasi Data:** [Recharts](https://recharts.org/)
 - **Excel & CSV Handler:** [SheetJS (xlsx)](https://sheetjs.com/)
 - **Ikon Antarmuka:** [Lucide React](https://lucide.dev/)
+- **Database:** [Turso Database](https://turso.tech/) (libSQL distributed SQLite cloud database)
+- **Backend / Serverless API:** [Vercel Serverless Functions](https://vercel.com/docs/functions) (`/api/findings`, `/api/findings/[id]`, `/api/findings/reset`, `/api/init`)
 - **Pengujian Unit:** [Vitest](https://vitest.dev/)
-- **Penyimpanan:** Browser `localStorage` (tanpa server backend terpisah)
 
 ---
 
@@ -72,8 +72,18 @@ Aplikasi web modern berbasis React, TypeScript, dan Tailwind CSS untuk pemantaua
 
 ```
 D:\dashboard\
+├── api/
+│   ├── _db.ts                   # Koneksi client Turso, helper query, dan init schema
+│   ├── _devServer.ts            # Vite dev plugin untuk menangani /api/* lokal
+│   ├── _types.ts                # Tipe Request & Response untuk Vercel Serverless
+│   ├── findings.ts              # Endpoint GET (ambil semua temuan) & POST (tambah temuan)
+│   ├── findings/
+│   │   ├── [id].ts              # Endpoint GET by id, PUT (update temuan), DELETE (hapus temuan)
+│   │   └── reset.ts             # Endpoint POST untuk reset database ke 22 data seed Excel
+│   └── init.ts                  # Endpoint inisialisasi tabel & cek koneksi Turso
 ├── scripts/
-│   └── import-excel.ts          # Script membaca DASHBOARD.xlsx -> menghasilkan seed.json
+│   ├── import-excel.ts          # Script membaca DASHBOARD.xlsx -> menghasilkan seed.json
+│   └── seed-turso.ts            # Script inisialisasi tabel & seeding data ke Turso DB
 ├── src/
 │   ├── assets/                  # Asset gambar & ikon
 │   ├── components/
@@ -84,7 +94,7 @@ D:\dashboard\
 │   │   └── pengolahan/          # Komponen halaman Pengolahan (Ringkasan, Rekap, Kombinasi, Crosstab Heatmap)
 │   ├── context/
 │   │   ├── FilterContext.tsx     # State filter global (slicer)
-│   │   ├── K3DataContext.tsx     # State data utama (CRUD, localStorage, seed, import/export)
+│   │   ├── K3DataContext.tsx     # State data utama (terhubung ke Turso via REST API)
 │   │   └── ThemeContext.tsx      # State tema (Dark/Light Mode)
 │   ├── data/
 │   │   └── seed.json            # Data seed terstruktur hasil import dari DASHBOARD.xlsx
@@ -104,13 +114,13 @@ D:\dashboard\
 │   ├── index.css                # Tailwind directives & CSS Print styling
 │   ├── main.tsx                 # Entry point React DOM
 │   └── vite-env.d.ts            # Deklarasi lingkungan Vite
+├── .env.example                 # Contoh format environment variables untuk Turso
 ├── DASHBOARD.xlsx               # File sumber Excel asli
 ├── index.html                   # HTML template aplikasi
 ├── package.json                 # Konfigurasi dependensi dan script npm
-├── postcss.config.js            # Konfigurasi PostCSS
-├── tailwind.config.js           # Konfigurasi warna & utility Tailwind
-├── tsconfig.json                # Konfigurasi TypeScript compiler
-└── vite.config.ts               # Konfigurasi build Vite
+├── vercel.json                  # Konfigurasi routing & build Vercel
+├── vite.config.ts               # Konfigurasi build Vite + Turso dev middleware
+└── tsconfig.json                # Konfigurasi TypeScript compiler
 ```
 
 ---
@@ -127,19 +137,32 @@ Jalankan perintah berikut di folder proyek:
 npm install
 ```
 
-### 2. Menjalankan Server Pengembangan (Dev)
+### 2. Konfigurasi Environment Variables (Turso)
+Buat file `.env.local` di root folder (atau salin dari `.env.example`):
+```env
+TURSO_DATABASE_URL=libsql://dashboard-fahri233.aws-ap-southeast-1.turso.io
+TURSO_AUTH_TOKEN=eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9...
+```
+
+### 3. Inisialisasi & Seeding Database Turso
+Untuk mengisi database Turso dengan 22 data temuan awal dari Excel:
+```bash
+npm run seed:turso
+```
+
+### 4. Menjalankan Server Pengembangan (Dev)
 ```bash
 npm run dev
 ```
-Buka browser di alamat: `http://localhost:3000` (atau port yang ditampilkan di terminal).
+Buka browser di alamat: `http://localhost:3000`. Server Vite secara otomatis mengintegrasikan middleware `/api/*` lokal yang langsung tersambung ke database Turso.
 
-### 3. Menjalankan Pengujian Unit (Unit Test)
+### 5. Menjalankan Pengujian Unit (Unit Test)
 Untuk memverifikasi seluruh kalkulasi analitik terhadap checklist Angka Acuan:
 ```bash
 npm test
 ```
 
-### 4. Membangun Versi Produksi (Production Build)
+### 6. Membangun Versi Produksi (Production Build)
 ```bash
 npm run build
 npm run preview
@@ -147,9 +170,25 @@ npm run preview
 
 ---
 
+## ☁️ Deploy ke Vercel
+
+Aplikasi ini sudah dilengkapi `vercel.json` dan API serverless di direktori `api/`.
+
+### Langkah-langkah Deployment:
+1. Hubungkan repository GitHub [Fahri233/Dashboard](https://github.com/Fahri233/Dashboard) ke Vercel:
+   - Buka [dashboard Vercel](https://vercel.com/new).
+   - Import repository `Fahri233/Dashboard`.
+2. Di halaman **Environment Variables** pada proyek Vercel, tambahkan dua variabel:
+   - `TURSO_DATABASE_URL`: `libsql://dashboard-fahri233.aws-ap-southeast-1.turso.io`
+   - `TURSO_AUTH_TOKEN`: *(token auth JWT Turso Anda)*
+3. Klik **Deploy**.
+4. Vercel akan otomatis melakukan build frontend Vite dan mendeploy API serverless. Setiap operasi baca/tulis/update/hapus akan langsung tersimpan di cloud database Turso.
+
+---
+
 ## 🔄 Cara Memperbarui Data dari File Excel
 
-Jika file `DASHBOARD.xlsx` di root folder mengalami perubahan data atau Anda menggantinya dengan file Excel baru yang memiliki struktur tabel yang sama:
+Jika file `DASHBOARD.xlsx` di root folder mengalami perubahan data atau diganti dengan file Excel baru yang memiliki struktur tabel yang sama:
 
 1. Letakkan file `DASHBOARD.xlsx` di root folder proyek (`D:\dashboard\DASHBOARD.xlsx`).
 2. Jalankan script import otomatis:
@@ -163,7 +202,11 @@ Jika file `DASHBOARD.xlsx` di root folder mengalami perubahan data atau Anda men
    - Menormalisasi typo `"Egronomi"` menjadi `"Ergonomi"`.
    - Menyimpan nilai asli (*raw*) untuk keperluan audit kualitas data.
    - Memperbarui file `src/data/seed.json`.
-3. Di antarmuka aplikasi web, klik tombol **"Reset ke Data Excel"** pada header banner untuk menyinkronkan data baru ke `localStorage` peramban Anda.
+3. Sinkronkan ulang data baru ke database Turso:
+   ```bash
+   npm run seed:turso
+   ```
+4. Atau pada antarmuka web, klik tombol **"Reset ke Data Excel"** pada header banner untuk menyinkronkan data seed ke Turso kapan saja.
 
 ---
 
@@ -200,4 +243,3 @@ Seluruh angka di bawah ini telah terverifikasi cocok 100% melalui unit test `src
 - **Uji Filter Ruang Pelayanan:** Total `7`, Selesai `1`, Proses `5`, Belum `1`
 - **Uji Filter Risiko Tinggi:** Total `8`, Selesai `1`, Proses `5`, Belum `2`
 - **Panel Kualitas Data:** Mendeteksi 3 normalisasi "Egronomi", 1 tanggal masa depan (No 22), 1 kemungkinan salah kategori (No 22: Kepleset di Biologis), dan 1 spasi berlebih (No 21: "pengaturan ").
-

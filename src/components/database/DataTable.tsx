@@ -27,7 +27,7 @@ type SortField = keyof K3Finding;
 type SortOrder = 'asc' | 'desc';
 
 export const DataTable: React.FC = () => {
-  const { findings, addFinding, updateFinding, deleteFinding, resetToSeed, importFindings } = useK3Data();
+  const { findings, addFinding, updateFinding, deleteFinding, resetToSeed, importFindings, isLoading } = useK3Data();
 
   // Local search and filter states for the table
   const [searchTerm, setSearchTerm] = useState('');
@@ -147,7 +147,7 @@ export const DataTable: React.FC = () => {
       const shouldReplace = window.confirm(
         `Ditemukan ${parsed.length} baris data.\n\nKlik "OK" untuk MENGGANTIKAN seluruh data saat ini.\nKlik "Cancel" untuk MENAMBAHKAN (append) data ke daftar saat ini.`
       );
-      importFindings(parsed, shouldReplace ? 'replace' : 'append');
+      await importFindings(parsed, shouldReplace ? 'replace' : 'append');
       alert(`Berhasil mengimpor ${parsed.length} data temuan.`);
     } catch (err) {
       console.error(err);
@@ -459,7 +459,16 @@ export const DataTable: React.FC = () => {
             </thead>
 
             <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
-              {paginatedData.length === 0 ? (
+              {isLoading ? (
+                <tr>
+                  <td colSpan={11} className="py-12 text-center text-gray-400">
+                    <div className="flex items-center justify-center gap-2">
+                      <div className="w-4 h-4 border-2 border-[#354F52] border-t-transparent rounded-full animate-spin" />
+                      <span>Memuat data dari database...</span>
+                    </div>
+                  </td>
+                </tr>
+              ) : paginatedData.length === 0 ? (
                 <tr>
                   <td colSpan={11} className="py-12 text-center text-gray-400">
                     Tidak ada data temuan yang cocok.
@@ -602,11 +611,11 @@ export const DataTable: React.FC = () => {
         }}
         initialData={editingFinding}
         nextNo={nextNo}
-        onSubmit={data => {
+        onSubmit={async data => {
           if (editingFinding) {
-            updateFinding({ ...data, id: editingFinding.id });
+            await updateFinding({ ...data, id: editingFinding.id });
           } else {
-            addFinding(data);
+            await addFinding(data);
           }
         }}
       />
@@ -619,9 +628,9 @@ export const DataTable: React.FC = () => {
           setDeletingFinding(null);
         }}
         finding={deletingFinding}
-        onConfirm={() => {
+        onConfirm={async () => {
           if (deletingFinding) {
-            deleteFinding(deletingFinding.id);
+            await deleteFinding(deletingFinding.id);
           }
         }}
       />

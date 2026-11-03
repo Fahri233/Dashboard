@@ -7,7 +7,7 @@ import { K3Finding } from '../../types/k3';
 interface DeleteConfirmModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onConfirm: () => void;
+  onConfirm: () => void | Promise<void>;
   finding: K3Finding | null;
 }
 
