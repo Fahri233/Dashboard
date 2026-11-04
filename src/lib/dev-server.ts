@@ -1,23 +1,57 @@
 import type { Plugin } from 'vite';
 import { loadEnv } from 'vite';
-import { getTursoClient, initDatabase, seedFindings, rowToFinding } from '../../api/_db';
+import { createClient } from '@libsql/client/web';
+import seedData from '../data/seed.json';
+import { K3Finding } from '../types/k3';
+
+const DEFAULT_URL = 'libsql://dashboard-fahri233.aws-ap-southeast-1.turso.io';
+const DEFAULT_AUTH_TOKEN =
+  'eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJhIjoicnciLCJpYXQiOjE3OTM3MTY3MTcsImlkIjoiMDFhMWExZDgtZTIwMS03NzE5LWJkMDUtOTIxNDVhMzczN2EwIiwia2lkIjoiUml3czV4QW40aWV5eWVlYWpwV19uSnJfbXBoRklyb3N5eWE2YmJnZERtMCIsInJpZCI6Ijc4ODI4YjQyLWIxNzAtNDI4YS1hMDQ4LTVhNzc3NWE3MDBmOSJ9.oGGutSDRGFKwD9l7G2V2e2uaRFkCtM1IOHq574vfGyIa8zoua9ucgFFcwEiECIc6EGcg0p893hqrTxbZwbo4Ag';
+
+function rowToFinding(row: any): K3Finding {
+  return {
+    id: String(row.id),
+    no: Number(row.no),
+    tanggal: String(row.tanggal),
+    tanggalIso: String(row.tanggal_iso),
+    lokasi: row.lokasi,
+    aktivitas: String(row.aktivitas),
+    potensiBahaya: String(row.potensi_bahaya),
+    kategori: row.kategori,
+    tingkatRisiko: row.tingkat_risiko,
+    pengendalian: String(row.pengendalian),
+    status: row.status,
+    keterangan: String(row.keterangan || '-'),
+    raw: {
+      kategori: row.raw_kategori || undefined,
+      pengendalian: row.raw_pengendalian || undefined,
+      potensiBahaya: row.raw_potensi_bahaya || undefined,
+      tanggal: row.raw_tanggal || undefined,
+    },
+  };
+}
 
 export function tursoApiDevPlugin(): Plugin {
   return {
     name: 'turso-api-dev-server',
     configureServer(server) {
       const env = loadEnv('development', process.cwd(), '');
-      if (env.TURSO_DATABASE_URL) process.env.TURSO_DATABASE_URL = env.TURSO_DATABASE_URL;
-      if (env.TURSO_AUTH_TOKEN) process.env.TURSO_AUTH_TOKEN = env.TURSO_AUTH_TOKEN;
+      const url = env.TURSO_DATABASE_URL || DEFAULT_URL;
+      const authToken = env.TURSO_AUTH_TOKEN || DEFAULT_AUTH_TOKEN;
+
+      const db = createClient({
+        url,
+        authToken,
+      });
 
       server.middlewares.use(async (req, res, next) => {
         if (!req.url?.startsWith('/api')) {
           return next();
         }
 
-        const url = new URL(req.url, 'http://localhost');
-        const pathname = url.pathname;
-        const queryId = url.searchParams.get('id');
+        const parsedUrl = new URL(req.url, 'http://localhost');
+        const pathname = parsedUrl.pathname;
+        const queryId = parsedUrl.searchParams.get('id');
 
         const sendJson = (status: number, data: any) => {
           res.setHeader('Content-Type', 'application/json');
@@ -40,20 +74,42 @@ export function tursoApiDevPlugin(): Plugin {
             });
           });
 
-        const db = getTursoClient();
-
         try {
-          await initDatabase(db);
-
           // Route: /api/init
           if (pathname === '/api/init') {
             const countRes = await db.execute('SELECT COUNT(*) as count FROM findings');
             return sendJson(200, { success: true, count: Number(countRes.rows[0].count) });
           }
 
-          // Route: /api/findings/reset or /api/reset
+          // Route: /api/reset
           if ((pathname === '/api/findings/reset' || pathname === '/api/reset') && req.method === 'POST') {
-            await seedFindings(db);
+            await db.execute('DELETE FROM findings');
+            const statements = (seedData as K3Finding[]).map(item => ({
+              sql: `INSERT INTO findings (
+                id, no, tanggal, tanggal_iso, lokasi, aktivitas, potensi_bahaya,
+                kategori, tingkat_risiko, pengendalian, status, keterangan,
+                raw_kategori, raw_pengendalian, raw_potensi_bahaya, raw_tanggal
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+              args: [
+                item.id,
+                item.no,
+                item.tanggal,
+                item.tanggalIso,
+                item.lokasi,
+                item.aktivitas,
+                item.potensiBahaya,
+                item.kategori,
+                item.tingkatRisiko,
+                item.pengendalian,
+                item.status,
+                item.keterangan || '-',
+                item.raw?.kategori || null,
+                item.raw?.pengendalian || null,
+                item.raw?.potensiBahaya || null,
+                item.raw?.tanggal || null,
+              ],
+            }));
+            await db.batch(statements, 'write');
             const countRes = await db.execute('SELECT COUNT(*) as count FROM findings');
             return sendJson(200, { success: true, count: Number(countRes.rows[0].count) });
           }
@@ -63,7 +119,6 @@ export function tursoApiDevPlugin(): Plugin {
           const targetId = idMatch ? decodeURIComponent(idMatch[1]) : queryId;
 
           if (pathname === '/api/findings' || idMatch) {
-            // GET
             if (req.method === 'GET') {
               if (targetId) {
                 const getRes = await db.execute({
@@ -77,7 +132,6 @@ export function tursoApiDevPlugin(): Plugin {
               return sendJson(200, { success: true, data: result.rows.map(rowToFinding) });
             }
 
-            // POST (Tambah Temuan)
             if (req.method === 'POST') {
               const item = await parseBody();
               const maxRes = await db.execute('SELECT MAX(no) as max_no FROM findings');
@@ -117,7 +171,6 @@ export function tursoApiDevPlugin(): Plugin {
               return sendJson(201, { success: true, data: rowToFinding(inserted.rows[0]) });
             }
 
-            // PUT (Update Temuan)
             if (req.method === 'PUT') {
               const item = await parseBody();
               const idToUpdate = targetId || item?.id;
@@ -157,7 +210,6 @@ export function tursoApiDevPlugin(): Plugin {
               return sendJson(200, { success: true, data: rowToFinding(updated.rows[0]) });
             }
 
-            // DELETE
             if (req.method === 'DELETE') {
               const item = await parseBody();
               const idToDelete = targetId || item?.id;
