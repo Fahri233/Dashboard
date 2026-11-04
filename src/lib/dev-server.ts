@@ -1,6 +1,6 @@
 import type { Plugin } from 'vite';
 import { loadEnv } from 'vite';
-import { getTursoClient, initDatabase, seedFindings, rowToFinding } from './_db.ts';
+import { getTursoClient, initDatabase, seedFindings, rowToFinding } from '../../api/_db';
 
 export function tursoApiDevPlugin(): Plugin {
   return {
@@ -51,14 +51,14 @@ export function tursoApiDevPlugin(): Plugin {
             return sendJson(200, { success: true, count: Number(countRes.rows[0].count) });
           }
 
-          // Route: /api/findings/reset
-          if (pathname === '/api/findings/reset' && req.method === 'POST') {
+          // Route: /api/findings/reset or /api/reset
+          if ((pathname === '/api/findings/reset' || pathname === '/api/reset') && req.method === 'POST') {
             await seedFindings(db);
             const countRes = await db.execute('SELECT COUNT(*) as count FROM findings');
             return sendJson(200, { success: true, count: Number(countRes.rows[0].count) });
           }
 
-          // Route: /api/findings (with optional query ?id=...) OR /api/findings/:id
+          // Route: /api/findings
           const idMatch = pathname.match(/^\/api\/findings\/([^/]+)$/);
           const targetId = idMatch ? decodeURIComponent(idMatch[1]) : queryId;
 
@@ -77,8 +77,8 @@ export function tursoApiDevPlugin(): Plugin {
               return sendJson(200, { success: true, data: result.rows.map(rowToFinding) });
             }
 
-            // POST (Add Finding)
-            if (req.method === 'POST' && pathname === '/api/findings') {
+            // POST (Tambah Temuan)
+            if (req.method === 'POST') {
               const item = await parseBody();
               const maxRes = await db.execute('SELECT MAX(no) as max_no FROM findings');
               const maxNo = Number(maxRes.rows[0]?.max_no || 0);
@@ -117,7 +117,7 @@ export function tursoApiDevPlugin(): Plugin {
               return sendJson(201, { success: true, data: rowToFinding(inserted.rows[0]) });
             }
 
-            // PUT (Update Finding)
+            // PUT (Update Temuan)
             if (req.method === 'PUT') {
               const item = await parseBody();
               const idToUpdate = targetId || item?.id;

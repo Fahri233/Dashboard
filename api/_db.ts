@@ -1,6 +1,6 @@
-import { createClient, Client } from '@libsql/client';
-import seedData from '../src/data/seed.json' with { type: 'json' };
-import { K3Finding } from '../src/types/k3.ts';
+import { createClient, type Client } from '@libsql/client/web';
+import seedData from '../src/data/seed.json';
+import type { K3Finding } from '../src/types/k3';
 
 let client: Client | null = null;
 

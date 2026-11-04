@@ -1,10 +1,10 @@
-import type { VercelRequest, VercelResponse } from '../_types';
-import { getTursoClient, initDatabase, seedFindings } from '../_db';
+import type { VercelRequest, VercelResponse } from './_types';
+import { getTursoClient, initDatabase, seedFindings } from './_db';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
@@ -15,9 +15,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   const db = getTursoClient();
-  if (!db) {
-    return res.status(500).json({ error: 'Database tidak tersedia.' });
-  }
 
   try {
     await initDatabase(db);
@@ -32,8 +29,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       count,
     });
   } catch (err: any) {
-    console.error('API /api/findings/reset error:', err);
+    console.error('API /api/reset error:', err);
     return res.status(500).json({ error: err.message || 'Internal server error' });
   }
 }
-
