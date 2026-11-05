@@ -1,4 +1,4 @@
-import { createClient } from '@libsql/client/web';
+import { createClient } from '@libsql/client/http';
 
 const TURSO_URL =
   process.env.TURSO_DATABASE_URL ||
