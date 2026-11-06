@@ -12,9 +12,11 @@ import { useK3Data } from '../../context/K3DataContext';
 import { K3Finding, QualityAnomaly } from '../../types/k3';
 import { FindingFormModal } from '../database/FindingFormModal';
 import { Button } from '../common/Button';
+import { useToast } from '../../context/ToastContext';
 
 export const QualityAnomalyTable: React.FC = () => {
   const { findings, updateFinding } = useK3Data();
+  const { showToast } = useToast();
   const anomalies = detectDataQualityAnomalies(findings);
 
   const [editingFinding, setEditingFinding] = useState<K3Finding | null>(null);
@@ -204,7 +206,12 @@ export const QualityAnomalyTable: React.FC = () => {
         nextNo={findings.length + 1}
         onSubmit={async data => {
           if (editingFinding) {
-            await updateFinding({ ...data, id: editingFinding.id });
+            try {
+              await updateFinding({ ...data, id: editingFinding.id });
+              showToast(`Data temuan #${editingFinding.no} berhasil diperbaiki!`, 'success');
+            } catch (err: any) {
+              showToast(err?.message || 'Gagal memperbarui data', 'error');
+            }
           }
         }}
       />

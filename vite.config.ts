@@ -1,6 +1,6 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
-import { tursoApiDevPlugin } from './src/lib/dev-server';
+import { tursoApiDevPlugin } from './src/lib/dev-server.ts';
 
 // https://vitejs.dev/config/
 export default defineConfig({

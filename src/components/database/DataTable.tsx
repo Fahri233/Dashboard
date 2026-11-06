@@ -6,6 +6,7 @@ import {
   FileText,
   Upload,
   RotateCcw,
+  RefreshCw,
   ArrowUpDown,
   ArrowUp,
   ArrowDown,
@@ -18,16 +19,36 @@ import {
 import { K3Finding } from '../../types/k3';
 import { Badge } from '../common/Badge';
 import { Button } from '../common/Button';
+import { ConfirmModal } from '../common/ConfirmModal';
 import { FindingFormModal } from './FindingFormModal';
 import { DeleteConfirmModal } from './DeleteConfirmModal';
 import { exportToExcel, exportToCSV, parseUploadedExcel } from '../../lib/excel-export';
 import { useK3Data } from '../../context/K3DataContext';
+import { useToast } from '../../context/ToastContext';
 
 type SortField = keyof K3Finding;
 type SortOrder = 'asc' | 'desc';
 
 export const DataTable: React.FC = () => {
-  const { findings, addFinding, updateFinding, deleteFinding, resetToSeed, importFindings, isLoading } = useK3Data();
+  const {
+    findings,
+    addFinding,
+    updateFinding,
+    deleteFinding,
+    resetToSeed,
+    importFindings,
+    refetch,
+    isLoading
+  } = useK3Data();
+  const { showToast } = useToast();
+
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isResetModalOpen, setIsResetModalOpen] = useState(false);
+  const [isResetting, setIsResetting] = useState(false);
+
+  // Import Modal state
+  const [importPending, setImportPending] = useState<K3Finding[] | null>(null);
+  const [isImporting, setIsImporting] = useState(false);
 
   // Local search and filter states for the table
   const [searchTerm, setSearchTerm] = useState('');
@@ -141,28 +162,73 @@ export const DataTable: React.FC = () => {
     try {
       const parsed = await parseUploadedExcel(file);
       if (parsed.length === 0) {
-        alert('Tidak ada baris data valid yang ditemukan pada file Excel.');
+        showToast('Tidak ada baris data valid yang ditemukan pada file Excel.', 'warning');
         return;
       }
-      const shouldReplace = window.confirm(
-        `Ditemukan ${parsed.length} baris data.\n\nKlik "OK" untuk MENGGANTIKAN seluruh data saat ini.\nKlik "Cancel" untuk MENAMBAHKAN (append) data ke daftar saat ini.`
-      );
-      await importFindings(parsed, shouldReplace ? 'replace' : 'append');
-      alert(`Berhasil mengimpor ${parsed.length} data temuan.`);
-    } catch (err) {
+      setImportPending(parsed);
+    } catch (err: any) {
       console.error(err);
-      alert('Gagal membaca file Excel. Pastikan format tabel memiliki kolom yang sesuai.');
+      showToast('Gagal membaca file Excel. Pastikan format tabel memiliki kolom yang sesuai.', 'error');
     } finally {
       if (fileInputRef.current) fileInputRef.current.value = '';
     }
   };
 
+  const handleConfirmImport = async (mode: 'replace' | 'append') => {
+    if (!importPending) return;
+    setIsImporting(true);
+    try {
+      await importFindings(importPending, mode);
+      showToast(`Berhasil mengimpor ${importPending.length} data temuan (${mode === 'replace' ? 'Gantikan' : 'Tambahkan'})!`, 'success');
+      setImportPending(null);
+    } catch (err: any) {
+      showToast(err?.message || 'Gagal mengimpor data ke database', 'error');
+    } finally {
+      setIsImporting(false);
+    }
+  };
+
+  const handleRefresh = async () => {
+    setIsRefreshing(true);
+    try {
+      await refetch();
+      showToast('Data database berhasil disinkronkan!', 'success');
+    } catch (err: any) {
+      showToast('Gagal menyinkronkan data database.', 'error');
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
+
+  const handleResetConfirm = async () => {
+    setIsResetting(true);
+    try {
+      await resetToSeed();
+      showToast('Database berhasil direset ke 22 temuan Excel asli!', 'success');
+      setIsResetModalOpen(false);
+    } catch (err: any) {
+      showToast(err?.message || 'Gagal mereset database', 'error');
+    } finally {
+      setIsResetting(false);
+    }
+  };
+
   const handleExportExcel = () => {
-    exportToExcel(processedData, `K3_Database_Export_${new Date().toISOString().split('T')[0]}.xlsx`);
+    try {
+      exportToExcel(processedData, `K3_Database_Export_${new Date().toISOString().split('T')[0]}.xlsx`);
+      showToast(`Berhasil mengekspor ${processedData.length} data ke Excel!`, 'success');
+    } catch (err) {
+      showToast('Gagal mengekspor data ke Excel.', 'error');
+    }
   };
 
   const handleExportCSV = () => {
-    exportToCSV(processedData, `K3_Database_Export_${new Date().toISOString().split('T')[0]}.csv`);
+    try {
+      exportToCSV(processedData, `K3_Database_Export_${new Date().toISOString().split('T')[0]}.csv`);
+      showToast(`Berhasil mengekspor ${processedData.length} data ke CSV!`, 'success');
+    } catch (err) {
+      showToast('Gagal mengekspor data ke CSV.', 'error');
+    }
   };
 
   const renderSortIcon = (field: SortField) => {
@@ -249,14 +315,21 @@ export const DataTable: React.FC = () => {
           </Button>
 
           <Button
+            variant="outline"
+            size="sm"
+            icon={<RefreshCw className={`w-3.5 h-3.5 text-gray-600 dark:text-gray-300 ${isRefreshing ? 'animate-spin' : ''}`} />}
+            onClick={handleRefresh}
+            disabled={isRefreshing}
+            title="Sinkronkan / Segarkan data dari database"
+          >
+            {isRefreshing ? 'Menyinkronkan...' : 'Segarkan'}
+          </Button>
+
+          <Button
             variant="ghost"
             size="sm"
             icon={<RotateCcw className="w-3.5 h-3.5 text-gray-500" />}
-            onClick={() => {
-              if (window.confirm('Reset data database ke 22 temuan Excel asli?')) {
-                resetToSeed();
-              }
-            }}
+            onClick={() => setIsResetModalOpen(true)}
             title="Reset ke Data Excel Asli"
           >
             Reset
@@ -612,10 +685,16 @@ export const DataTable: React.FC = () => {
         initialData={editingFinding}
         nextNo={nextNo}
         onSubmit={async data => {
-          if (editingFinding) {
-            await updateFinding({ ...data, id: editingFinding.id });
-          } else {
-            await addFinding(data);
+          try {
+            if (editingFinding) {
+              await updateFinding({ ...data, id: editingFinding.id });
+              showToast(`Perubahan temuan #${editingFinding.no} berhasil disimpan!`, 'success');
+            } else {
+              const res = await addFinding(data);
+              showToast(`Temuan K3 baru #${res.no} berhasil ditambahkan!`, 'success');
+            }
+          } catch (err: any) {
+            showToast(err?.message || 'Gagal menyimpan data temuan', 'error');
           }
         }}
       />
@@ -630,10 +709,43 @@ export const DataTable: React.FC = () => {
         finding={deletingFinding}
         onConfirm={async () => {
           if (deletingFinding) {
-            await deleteFinding(deletingFinding.id);
+            try {
+              await deleteFinding(deletingFinding.id);
+              showToast(`Temuan #${deletingFinding.no} berhasil dihapus!`, 'info');
+            } catch (err: any) {
+              showToast(err?.message || 'Gagal menghapus temuan', 'error');
+            }
           }
         }}
       />
+
+      {/* Reset Confirmation Modal */}
+      <ConfirmModal
+        isOpen={isResetModalOpen}
+        title="Reset Data ke Excel Asli"
+        message="Apakah Anda yakin ingin mengembalikan seluruh isi tabel database ke 22 temuan Excel asli?\n\nSemua perubahan baru atau hasil editan akan digantikan dengan data bawaan."
+        confirmLabel="Ya, Reset Database"
+        cancelLabel="Batal"
+        variant="warning"
+        isLoading={isResetting}
+        onConfirm={handleResetConfirm}
+        onClose={() => setIsResetModalOpen(false)}
+      />
+
+      {/* Import Choice Modal */}
+      {importPending && (
+        <ConfirmModal
+          isOpen={!!importPending}
+          title="Konfirmasi Impor Data Excel"
+          message={`Ditemukan ${importPending.length} baris data temuan dari file Excel.\n\nPilih "Gantikan Semua" untuk menimpa seluruh data saat ini, atau "Batal" jika Anda ingin memeriksa kembali file.`}
+          confirmLabel="Gantikan Semua Data"
+          cancelLabel="Batal"
+          variant="primary"
+          isLoading={isImporting}
+          onConfirm={() => handleConfirmImport('replace')}
+          onClose={() => setImportPending(null)}
+        />
+      )}
     </div>
   );
 };

@@ -1,7 +1,9 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { ShieldCheck, Printer, Sun, Moon, RotateCcw, Menu } from 'lucide-react';
 import { useTheme } from '../../context/ThemeContext';
 import { useK3Data } from '../../context/K3DataContext';
+import { useToast } from '../../context/ToastContext';
+import { ConfirmModal } from './ConfirmModal';
 
 interface HeaderProps {
   onToggleSidebar?: () => void;
@@ -10,14 +12,25 @@ interface HeaderProps {
 export const Header: React.FC<HeaderProps> = ({ onToggleSidebar }) => {
   const { theme, toggleTheme } = useTheme();
   const { resetToSeed } = useK3Data();
+  const { showToast } = useToast();
+
+  const [isResetModalOpen, setIsResetModalOpen] = useState(false);
+  const [isResetting, setIsResetting] = useState(false);
 
   const handlePrint = () => {
     window.print();
   };
 
-  const handleResetData = async () => {
-    if (window.confirm('Kembalikan seluruh data ke versi awal Excel (seed)? Perubahan Anda akan direset.')) {
+  const handleConfirmReset = async () => {
+    setIsResetting(true);
+    try {
       await resetToSeed();
+      showToast('Database berhasil dikembalikan ke 22 temuan Excel asli!', 'success');
+      setIsResetModalOpen(false);
+    } catch (err: any) {
+      showToast(err?.message || 'Gagal mereset database', 'error');
+    } finally {
+      setIsResetting(false);
     }
   };
 
@@ -54,7 +67,7 @@ export const Header: React.FC<HeaderProps> = ({ onToggleSidebar }) => {
         <div className="flex items-center gap-2 sm:gap-3 no-print">
           {/* Reset to Excel Button */}
           <button
-            onClick={handleResetData}
+            onClick={() => setIsResetModalOpen(true)}
             title="Reset ke Data Excel Asli"
             className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs sm:text-sm font-medium rounded-lg bg-white/10 hover:bg-white/20 text-emerald-50 transition-colors border border-white/15 cursor-pointer"
           >
@@ -83,7 +96,19 @@ export const Header: React.FC<HeaderProps> = ({ onToggleSidebar }) => {
           </button>
         </div>
       </div>
+
+      {/* Confirmation Modal for Reset */}
+      <ConfirmModal
+        isOpen={isResetModalOpen}
+        title="Reset Data ke Excel Asli"
+        message="Apakah Anda yakin ingin mengembalikan seluruh data database ke 22 temuan Excel asli?\n\nSemua data temuan tambahan baru atau hasil editan akan digantikan dengan data bawaan."
+        confirmLabel="Ya, Reset Database"
+        cancelLabel="Batal"
+        variant="warning"
+        isLoading={isResetting}
+        onConfirm={handleConfirmReset}
+        onClose={() => setIsResetModalOpen(false)}
+      />
     </header>
   );
 };
-

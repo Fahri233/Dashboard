@@ -10,13 +10,6 @@ import seedData from '../data/seed.json';
 import { K3Finding } from '../types/k3';
 import { useFilter } from './FilterContext';
 import { filterFindings } from '../lib/k3-calculations';
-import {
-  directFetchAllFindings,
-  directInsertFinding,
-  directUpdateFinding,
-  directDeleteFinding,
-  directResetSeed,
-} from '../lib/turso';
 
 const API_BASE = '/api';
 
@@ -66,39 +59,26 @@ async function apiFetch<T>(url: string, options?: RequestInit): Promise<T> {
 export const K3DataProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { filter } = useFilter();
 
-  // Inisialisasi awal selalu dengan seedData agar UI tidak kosong saat memuat
+  // Inisialisasi awal selalu dengan seedData agar UI tidak blank saat memuat
   const [findings, setFindings] = useState<K3Finding[]>(() => seedData as K3Finding[]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // ── Fetch all findings from Turso via API or Direct Fallback ──
+  // ── Fetch all findings from Turso via API ──
   const refetch = useCallback(async () => {
     setIsLoading(true);
     setError(null);
 
-    // 1. Coba lewat API endpoint terlebih dahulu
     try {
       const json = await apiFetch<{ success: boolean; data: K3Finding[] }>(
         `${API_BASE}/findings`
       );
       if (Array.isArray(json.data) && json.data.length > 0) {
         setFindings(json.data);
-        setIsLoading(false);
-        return;
       }
-    } catch (apiErr) {
-      console.warn('API /api/findings tidak tersedia, mencoba koneksi langsung ke Turso...', apiErr);
-    }
-
-    // 2. Jika API gagal (misal serverless Vercel 500), hubungi Turso secara langsung via web client
-    try {
-      const directData = await directFetchAllFindings();
-      if (Array.isArray(directData) && directData.length > 0) {
-        setFindings(directData);
-      }
-    } catch (directErr: any) {
-      console.error('Koneksi langsung ke Turso juga gagal:', directErr);
-      setError(directErr.message || 'Gagal memuat data dari database');
+    } catch (apiErr: any) {
+      console.warn('API /api/findings gagal dimuat, menggunakan data cache/seed lokal:', apiErr);
+      setError(apiErr?.message || 'Gagal memuat data dari database');
     } finally {
       setIsLoading(false);
     }
@@ -113,7 +93,7 @@ export const K3DataProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     return filterFindings(findings, filter);
   }, [findings, filter]);
 
-  // ── CRUD (Dual Strategy: API First, Direct Turso Fallback) ─────────────────
+  // ── CRUD Operations ───────────────────────────────────────────────────────
 
   const addFinding = useCallback(
     async (item: Omit<K3Finding, 'id' | 'no'>): Promise<K3Finding> => {
@@ -125,7 +105,6 @@ export const K3DataProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         no: newNo,
       };
 
-      // Coba lewat API
       try {
         const json = await apiFetch<{ success: boolean; data: K3Finding }>(
           `${API_BASE}/findings`,
@@ -134,18 +113,8 @@ export const K3DataProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         const saved = json.data || newFinding;
         setFindings(prev => [...prev.filter(f => f.id !== saved.id), saved]);
         return saved;
-      } catch (apiErr) {
-        console.warn('API POST gagal, fallback ke direct Turso insert...', apiErr);
-      }
-
-      // Fallback: Direct Turso Insert
-      try {
-        const saved = await directInsertFinding(newFinding);
-        setFindings(prev => [...prev.filter(f => f.id !== saved.id), saved]);
-        return saved;
-      } catch (directErr: any) {
-        console.error('Direct Turso insert gagal:', directErr);
-        // Optimistic UI update
+      } catch (apiErr: any) {
+        console.warn('API POST gagal, menerapkan update optimistik lokal:', apiErr);
         setFindings(prev => [...prev, newFinding]);
         return newFinding;
       }
@@ -154,7 +123,6 @@ export const K3DataProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   );
 
   const updateFinding = useCallback(async (updated: K3Finding): Promise<void> => {
-    // Coba lewat API
     try {
       const json = await apiFetch<{ success: boolean; data: K3Finding }>(
         `${API_BASE}/findings?id=${encodeURIComponent(updated.id)}`,
@@ -162,37 +130,18 @@ export const K3DataProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       );
       const saved = json.data || updated;
       setFindings(prev => prev.map(f => (f.id === updated.id || f.no === updated.no ? saved : f)));
-      return;
-    } catch (apiErr) {
-      console.warn('API PUT gagal, fallback ke direct Turso update...', apiErr);
-    }
-
-    // Fallback: Direct Turso Update
-    try {
-      const saved = await directUpdateFinding(updated);
-      setFindings(prev => prev.map(f => (f.id === updated.id || f.no === updated.no ? saved : f)));
-    } catch (directErr: any) {
-      console.error('Direct Turso update gagal:', directErr);
+    } catch (apiErr: any) {
+      console.warn('API PUT gagal, menerapkan update optimistik lokal:', apiErr);
       setFindings(prev => prev.map(f => (f.id === updated.id || f.no === updated.no ? updated : f)));
     }
   }, []);
 
   const deleteFinding = useCallback(async (id: string): Promise<void> => {
-    // Coba lewat API
     try {
       await apiFetch(`${API_BASE}/findings?id=${encodeURIComponent(id)}`, { method: 'DELETE' });
       setFindings(prev => prev.filter(f => f.id !== id && String(f.no) !== id));
-      return;
-    } catch (apiErr) {
-      console.warn('API DELETE gagal, fallback ke direct Turso delete...', apiErr);
-    }
-
-    // Fallback: Direct Turso Delete
-    try {
-      await directDeleteFinding(id);
-      setFindings(prev => prev.filter(f => f.id !== id && String(f.no) !== id));
-    } catch (directErr: any) {
-      console.error('Direct Turso delete gagal:', directErr);
+    } catch (apiErr: any) {
+      console.warn('API DELETE gagal, menerapkan update optimistik lokal:', apiErr);
       setFindings(prev => prev.filter(f => f.id !== id && String(f.no) !== id));
     }
   }, []);
@@ -201,21 +150,11 @@ export const K3DataProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     setIsLoading(true);
     setError(null);
 
-    // Coba lewat API
     try {
       await apiFetch(`${API_BASE}/reset`, { method: 'POST' });
       await refetch();
-      return;
-    } catch (apiErr) {
-      console.warn('API /api/reset gagal, fallback ke direct Turso reset...', apiErr);
-    }
-
-    // Fallback: Direct Turso Reset
-    try {
-      await directResetSeed();
-      await refetch();
-    } catch (directErr: any) {
-      console.error('Direct Turso reset gagal:', directErr);
+    } catch (apiErr: any) {
+      console.warn('API /api/reset gagal, menggunakan seed statis lokal:', apiErr);
       setFindings(seedData as K3Finding[]);
       setIsLoading(false);
     }
@@ -228,8 +167,8 @@ export const K3DataProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       if (mode === 'replace') {
         try {
           await apiFetch(`${API_BASE}/reset`, { method: 'POST' });
-        } catch {
-          await directResetSeed().catch(() => {});
+        } catch (e) {
+          console.warn('Reset sebelum impor gagal di server:', e);
         }
         toInsert = imported.map((item, i) => ({
           ...item,
@@ -250,15 +189,15 @@ export const K3DataProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         setFindings(prev => [...prev, ...toInsert]);
       }
 
-      // Sync ke Turso
+      // Kirim record ke API
       for (const item of toInsert) {
         try {
           await apiFetch(`${API_BASE}/findings`, {
             method: 'POST',
             body: JSON.stringify(item),
           });
-        } catch {
-          await directInsertFinding(item).catch(() => {});
+        } catch (e) {
+          console.warn('Gagal sinkron item impor ke server:', item.id, e);
         }
       }
     },

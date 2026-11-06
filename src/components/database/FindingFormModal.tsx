@@ -42,6 +42,7 @@ export const FindingFormModal: React.FC<FindingFormModalProps> = ({
 
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [futureDateWarning, setFutureDateWarning] = useState<boolean>(false);
+  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
 
   useEffect(() => {
     if (initialData) {
@@ -80,7 +81,7 @@ export const FindingFormModal: React.FC<FindingFormModalProps> = ({
     }
   }, [tanggalIso]);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const newErrors: Record<string, string> = {};
 
@@ -98,21 +99,25 @@ export const FindingFormModal: React.FC<FindingFormModalProps> = ({
     const [y, m, d] = tanggalIso.split('-');
     const ddMmYyyy = `${d}/${m}/${y}`;
 
-    onSubmit({
-      no,
-      tanggal: ddMmYyyy,
-      tanggalIso,
-      lokasi,
-      aktivitas: aktivitas.trim(),
-      potensiBahaya: potensiBahaya.trim(),
-      kategori,
-      tingkatRisiko,
-      pengendalian: pengendalian.trim(),
-      status,
-      keterangan: keterangan.trim() || '-'
-    });
-
-    onClose();
+    setIsSubmitting(true);
+    try {
+      await onSubmit({
+        no,
+        tanggal: ddMmYyyy,
+        tanggalIso,
+        lokasi,
+        aktivitas: aktivitas.trim(),
+        potensiBahaya: potensiBahaya.trim(),
+        kategori,
+        tingkatRisiko,
+        pengendalian: pengendalian.trim(),
+        status,
+        keterangan: keterangan.trim() || '-'
+      });
+      onClose();
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -297,11 +302,20 @@ export const FindingFormModal: React.FC<FindingFormModalProps> = ({
         </div>
 
         <div className="flex items-center justify-end gap-3 pt-4 border-t border-gray-100 dark:border-gray-700">
-          <Button type="button" variant="outline" onClick={onClose}>
+          <Button type="button" variant="outline" onClick={onClose} disabled={isSubmitting}>
             Batal
           </Button>
-          <Button type="submit" variant="primary">
-            {initialData ? 'Simpan Perubahan' : 'Tambah Temuan'}
+          <Button type="submit" variant="primary" disabled={isSubmitting}>
+            {isSubmitting ? (
+              <span className="flex items-center gap-2">
+                <span className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                Menyimpan...
+              </span>
+            ) : initialData ? (
+              'Simpan Perubahan'
+            ) : (
+              'Tambah Temuan'
+            )}
           </Button>
         </div>
       </form>

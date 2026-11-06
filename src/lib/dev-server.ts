@@ -1,8 +1,8 @@
 import type { Plugin } from 'vite';
 import { loadEnv } from 'vite';
 import { createClient } from '@libsql/client/web';
-import seedData from '../data/seed.json';
-import { K3Finding } from '../types/k3';
+import seedData from '../data/seed.json' with { type: 'json' };
+import { K3Finding } from '../types/k3.ts';
 
 const DEFAULT_URL = 'libsql://dashboard-fahri233.aws-ap-southeast-1.turso.io';
 const DEFAULT_AUTH_TOKEN =
