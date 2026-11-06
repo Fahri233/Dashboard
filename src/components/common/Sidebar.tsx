@@ -1,6 +1,13 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, TableProperties, Database, ShieldAlert, X } from 'lucide-react';
+import {
+  LayoutDashboard,
+  TableProperties,
+  Database,
+  ShieldAlert,
+  ShieldCheck,
+  X
+} from 'lucide-react';
 import { useK3Data } from '../../context/K3DataContext';
 import { detectDataQualityAnomalies } from '../../lib/data-quality';
 
@@ -13,6 +20,17 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
   const { findings } = useK3Data();
   const anomalies = detectDataQualityAnomalies(findings);
   const warningCount = anomalies.length;
+
+  // Tutup sidebar saat menekan tombol Escape di keyboard
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isOpen) {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
 
   const navItems = [
     {
@@ -43,7 +61,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
       {/* Mobile backdrop */}
       {isOpen && (
         <div
-          className="fixed inset-0 z-40 bg-black/50 lg:hidden backdrop-blur-xs no-print"
+          className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm lg:hidden transition-opacity duration-300 no-print"
           onClick={onClose}
           aria-hidden="true"
         />
@@ -51,16 +69,29 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
 
       {/* Sidebar container */}
       <aside
-        className={`fixed top-0 bottom-0 left-0 z-40 w-64 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700/80 transform transition-transform duration-200 ease-in-out lg:translate-x-0 lg:static no-print flex flex-col ${
+        className={`fixed inset-y-0 left-0 z-50 w-72 max-w-[85vw] bg-white dark:bg-gray-800 shadow-2xl lg:shadow-none border-r border-gray-200 dark:border-gray-700/80 transform transition-transform duration-300 ease-in-out lg:translate-x-0 lg:static lg:z-auto lg:w-64 lg:shrink-0 lg:sticky lg:top-16 lg:h-[calc(100vh-4rem)] no-print flex flex-col ${
           isOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
       >
-        {/* Mobile close button */}
-        <div className="flex items-center justify-between p-4 lg:hidden border-b border-gray-100 dark:border-gray-700">
-          <span className="font-semibold text-gray-800 dark:text-gray-200">Menu Navigasi</span>
+        {/* Mobile drawer header (hanya muncul saat mobile/tablet) */}
+        <div className="flex items-center justify-between p-4 lg:hidden border-b border-gray-100 dark:border-gray-700/80 bg-gray-50/70 dark:bg-gray-800/80">
+          <div className="flex items-center gap-2.5">
+            <div className="p-2 bg-[#6B8E6B] rounded-xl text-white shadow-xs">
+              <ShieldCheck className="w-5 h-5" />
+            </div>
+            <div>
+              <span className="font-bold text-sm text-gray-900 dark:text-white block leading-tight">
+                K3 MONITORING
+              </span>
+              <span className="text-[11px] text-gray-500 dark:text-gray-400">
+                Menu Navigasi
+              </span>
+            </div>
+          </div>
           <button
             onClick={onClose}
-            className="p-1 rounded-lg text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer"
+            className="p-1.5 rounded-xl text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors cursor-pointer"
+            aria-label="Tutup menu navigasi"
           >
             <X className="w-5 h-5" />
           </button>
@@ -95,7 +126,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
         </nav>
 
         {/* Footer info in sidebar */}
-        <div className="p-4 border-t border-gray-100 dark:border-gray-700 text-xs text-gray-500 dark:text-gray-400">
+        <div className="p-4 border-t border-gray-100 dark:border-gray-700 text-xs text-gray-500 dark:text-gray-400 bg-gray-50/40 dark:bg-gray-800/40">
           <div className="flex items-center justify-between mb-1">
             <span className="font-semibold text-gray-700 dark:text-gray-300">Total Temuan:</span>
             <span className="font-bold text-gray-900 dark:text-white">{findings.length}</span>
@@ -108,4 +139,3 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
     </>
   );
 };
-

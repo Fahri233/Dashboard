@@ -49,7 +49,7 @@ export const App: React.FC = () => {
                   <Sidebar isOpen={isSidebarOpen} onClose={() => setIsSidebarOpen(false)} />
 
                   {/* Page Content */}
-                  <main className="flex-1 p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto w-full transition-all">
+                  <main className="flex-1 min-w-0 p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto w-full transition-all">
                     <Suspense fallback={<PageLoadingFallback />}>
                       <Routes>
                         <Route path="/" element={<DashboardPage />} />
